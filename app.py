@@ -3,10 +3,10 @@ import pandas as pd
 def load_data():
     try:
         deals = pd.read_excel("Deal funnel.csv")
-        work_orders = pd.read_excel("Work Order.csv")
+        work_orders = pd.read_excel("work order.csv")
     except Exception:
         deals = pd.read_csv("Deal funnel.csv")
-        work_orders = pd.read_csv("Work Order.csv")
+        work_orders = pd.read_csv("work order.csv")
     return deals, work_orders
 
 
