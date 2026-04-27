@@ -2,11 +2,11 @@ import pandas as pd
 
 def load_data():
     try:
-        deals = pd.read_excel("Deal_funnel_data.xlsx")
-        work_orders = pd.read_excel("Work_Order_Tracker_Data.xlsx")
+        deals = pd.read_excel("Deal funnel.csv")
+        work_orders = pd.read_excel("Work Order.csv")
     except Exception:
-        deals = pd.read_csv("Deal_funnel_Data.csv")
-        work_orders = pd.read_csv("Work_Order_Tracker_Data.csv")
+        deals = pd.read_csv("Deal funnel.csv")
+        work_orders = pd.read_csv("Work Order.csv")
     return deals, work_orders
 
 
