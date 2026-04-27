@@ -1,29 +1,38 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+
+# ----------------------------
+# Page Config
+# ----------------------------
+st.set_page_config(page_title="Business Intelligence Agent", layout="wide")
 
 
 # ----------------------------
 # Load Data
 # ----------------------------
+@st.cache_data
 def load_data():
     try:
         deals = pd.read_csv("Deal funnel.csv")
         work_orders = pd.read_csv("work order.csv")
+        return deals, work_orders
     except Exception as e:
-        st.error(f"Error loading files: {e}")
+        st.error(f"Error loading CSV files: {e}")
         st.stop()
-
-    return deals, work_orders
 
 
 # ----------------------------
 # Clean Data
 # ----------------------------
 def clean_data(df):
-    # Clean column names
-    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+    df.columns = (
+        df.columns.str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+        .str.replace("-", "_")
+    )
 
-    # Fill missing values safely
     for col in df.columns:
         if df[col].dtype == "object":
             df[col] = df[col].fillna("unknown").astype(str).str.strip()
@@ -34,84 +43,130 @@ def clean_data(df):
 
 
 # ----------------------------
-# BI Agent Class
+# Detect Numeric Column
+# ----------------------------
+def detect_value_column(df):
+    priority_names = [
+        "value", "amount", "revenue", "deal_value",
+        "price", "total", "sales", "deal_amount"
+    ]
+
+    for col in priority_names:
+        if col in df.columns:
+            return col
+
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+
+    if numeric_cols:
+        return numeric_cols[0]
+
+    return None
+
+
+# ----------------------------
+# Detect Status Column
+# ----------------------------
+def detect_status_column(df):
+    possible = ["status", "stage", "deal_stage"]
+
+    for col in possible:
+        if col in df.columns:
+            return col
+
+    return None
+
+
+# ----------------------------
+# BI Agent
 # ----------------------------
 class BusinessIntelligenceAgent:
+
     def __init__(self, deals, work_orders):
         self.deals = deals
         self.work_orders = work_orders
 
+        self.value_col = detect_value_column(deals)
+        self.stage_col = detect_status_column(deals)
+        self.work_status_col = detect_status_column(work_orders)
+
     def total_revenue(self):
-        if "value" in self.deals.columns:
-            return round(self.deals["value"].sum(), 2)
-        return "Revenue data not available"
-
-    def pipeline_health(self):
-        if "stage" in self.deals.columns:
-            return self.deals["stage"].value_counts().to_dict()
-        return "Pipeline data not available"
-
-    def top_deals(self, n=5):
-        if "value" in self.deals.columns:
-            return self.deals.sort_values(by="value", ascending=False).head(n)
-        return "Top deals not available"
-
-    def work_order_summary(self):
-        if "status" in self.work_orders.columns:
-            return self.work_orders["status"].value_counts().to_dict()
-        return "Work order data not available"
+        if self.value_col:
+            return round(self.deals[self.value_col].sum(), 2)
+        return "No revenue column found"
 
     def average_deal_size(self):
-        if "value" in self.deals.columns:
-            return round(self.deals["value"].mean(), 2)
-        return "Not available"
+        if self.value_col:
+            return round(self.deals[self.value_col].mean(), 2)
+        return "No numeric data"
+
+    def top_deals(self):
+        if self.value_col:
+            return self.deals.sort_values(
+                by=self.value_col,
+                ascending=False
+            ).head(5)
+        return "No top deals data"
+
+    def pipeline_status(self):
+        if self.stage_col:
+            return self.deals[self.stage_col].value_counts()
+        return "No pipeline data"
 
     def win_rate(self):
-        if "stage" in self.deals.columns:
+        if self.stage_col:
             total = len(self.deals)
+
             won = self.deals[
-                self.deals["stage"].astype(str).str.lower().str.contains("won")
+                self.deals[self.stage_col]
+                .astype(str)
+                .str.lower()
+                .str.contains("won|closed")
             ].shape[0]
 
             if total > 0:
                 return round((won / total) * 100, 2)
+
         return 0
 
-    def query(self, user_input):
-        q = user_input.lower()
+    def work_order_status(self):
+        if self.work_status_col:
+            return self.work_orders[self.work_status_col].value_counts()
+        return "No work order data"
+
+    def ask(self, q):
+
+        q = q.lower()
 
         if "revenue" in q:
-            return f"Total Revenue: {self.total_revenue()}"
+            return self.total_revenue()
 
-        elif "pipeline" in q:
-            return self.pipeline_health()
-
-        elif "top deals" in q:
+        elif "top" in q or "deal" in q:
             return self.top_deals()
 
-        elif "work order" in q or "orders" in q:
-            return self.work_order_summary()
+        elif "pipeline" in q:
+            return self.pipeline_status()
 
-        elif "average deal" in q:
-            return f"Average Deal Size: {self.average_deal_size()}"
+        elif "average" in q:
+            return self.average_deal_size()
 
-        elif "win rate" in q:
-            return f"Win Rate: {self.win_rate()}%"
+        elif "win" in q:
+            return self.win_rate()
+
+        elif "work" in q or "order" in q:
+            return self.work_order_status()
 
         else:
-            return "Sorry, I couldn't understand the query."
+            return "Try queries like revenue, top deals, pipeline, win rate"
 
 
 # ----------------------------
-# Streamlit App
+# Main App
 # ----------------------------
 def main():
-    st.set_page_config(page_title="Business Intelligence Agent", layout="wide")
 
     st.title("📊 Business Intelligence Agent")
-    st.write("Ask business questions using your CSV data.")
+    st.write("Smart analytics using your uploaded CSV datasets.")
 
-    # Load and clean data
     deals, work_orders = load_data()
 
     deals = clean_data(deals)
@@ -120,38 +175,52 @@ def main():
     agent = BusinessIntelligenceAgent(deals, work_orders)
 
     # Sidebar
-    st.sidebar.header("Available Queries")
-    st.sidebar.write("- total revenue")
-    st.sidebar.write("- pipeline status")
-    st.sidebar.write("- top deals")
-    st.sidebar.write("- work order status")
-    st.sidebar.write("- average deal size")
-    st.sidebar.write("- win rate")
+    st.sidebar.title("Available Queries")
+    st.sidebar.write("• total revenue")
+    st.sidebar.write("• top deals")
+    st.sidebar.write("• pipeline status")
+    st.sidebar.write("• average deal size")
+    st.sidebar.write("• win rate")
+    st.sidebar.write("• work order status")
 
-    # User Input
-    user_input = st.text_input("Ask a business question:")
+    # Show Columns
+    with st.expander("📁 Dataset Columns"):
+        st.write("Deals Columns:", deals.columns.tolist())
+        st.write("Work Orders Columns:", work_orders.columns.tolist())
+
+    # Input
+    question = st.text_input("Ask a business question:")
 
     if st.button("Submit"):
-        if user_input.strip() == "":
-            st.warning("Please enter a question.")
+
+        result = agent.ask(question)
+
+        st.subheader("Result")
+
+        if isinstance(result, pd.DataFrame):
+            st.dataframe(result, use_container_width=True)
+
+        elif isinstance(result, pd.Series):
+            st.bar_chart(result)
+
         else:
-            result = agent.query(user_input)
+            st.success(result)
 
-            st.subheader("Result")
+    # Dashboard Metrics
+    st.divider()
+    st.subheader("📌 Quick Dashboard")
 
-            if isinstance(result, pd.DataFrame):
-                st.dataframe(result)
-            elif isinstance(result, dict):
-                st.json(result)
-            else:
-                st.success(result)
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.metric("Total Revenue", agent.total_revenue())
+
+    with c2:
+        st.metric("Average Deal Size", agent.average_deal_size())
+
+    with c3:
+        st.metric("Win Rate", f"{agent.win_rate()}%")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
